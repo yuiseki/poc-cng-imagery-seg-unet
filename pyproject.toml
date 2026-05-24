@@ -1,0 +1,70 @@
+[project]
+name = "imagery-seg-unet"
+version = "0.1.0"
+description = "Pluggable U-Net training pipeline: arbitrary imagery x OSM ground truth x feature"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    # STAC + COG read
+    "pystac-client>=0.7",
+    "rasterio>=1.3",
+    "mercantile>=1.2",
+    # Geometry / rasterise
+    "shapely>=2.0",
+    "geopandas>=0.14",
+    "numpy>=1.26",
+    # HTTP (Overpass / STAC / tile server)
+    "httpx>=0.27",
+    # Model: U-Net via segmentation_models_pytorch.
+    # torch is pinned to the CPU index (see [tool.uv.sources]) so we don't
+    # drag in CUDA wheels.
+    "torch>=2.9,<2.13",
+    "torchvision>=0.24",
+    "segmentation_models_pytorch>=0.5",
+    # CLI
+    "typer>=0.12",
+    "scipy>=1.17.1",
+    "pillow>=12.2.0",
+    # Inference API
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "mapbox-vector-tile>=2.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "ruff>=0.5",
+]
+viz = [
+    # `imagery-seg infer` renders side-by-side imagery / GT / prediction PNGs.
+    "matplotlib>=3.9",
+]
+
+[project.scripts]
+imagery-seg = "imagery_seg.cli:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/imagery_seg"]
+
+# CPU-only PyTorch. See sibling poc-cng-hotosm-vector-seg/pyproject.toml
+# for the rationale — the default PyPI torch wheel drags in ~2 GB of CUDA
+# runtime even when we never use it.
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+torchvision = { index = "pytorch-cpu" }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "integration: tests that hit the network (HOTOSM STAC, Overpass) or load model weights",
+]

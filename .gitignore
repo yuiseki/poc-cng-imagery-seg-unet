@@ -1,0 +1,22 @@
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+.python-version
+.env
+.DS_Store
+
+# Runtime caches + outputs (regenerable; see src/imagery_seg/cache.py
+# and stages/01_recipe_smoke.py).
+tmp/
+cache/
+
+# Pytest / ruff / mypy
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Build artefacts
+build/
+dist/
+*.egg-info/

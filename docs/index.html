@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <title>poc-cng-imagery-seg-unet</title>
+  <meta name="viewport" content="initial-scale=1, width=device-width">
+  <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
+  <style>
+    html, body, #map { margin: 0; padding: 0; height: 100%; }
+    #panel {
+      position: absolute; top: 8px; left: 8px; z-index: 1;
+      background: rgba(13, 20, 38, 0.92);
+      padding: 10px 12px; border-radius: 6px;
+      font: 12px/1.5 -apple-system, system-ui, sans-serif;
+      color: #e2e8f0; max-width: 220px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+    }
+    #panel h1 { margin: 0 0 8px; font-size: 12px; color: #93c5fd; }
+    .layer-row { display: flex; align-items: center; justify-content: space-between; margin-top: 6px; }
+    .layer-label { font-size: 12px; }
+    .toggle-switch { position: relative; width: 36px; height: 20px; flex-shrink: 0; }
+    .toggle-switch input { opacity: 0; width: 0; height: 0; }
+    .toggle-track {
+      position: absolute; inset: 0; background: #334155; border-radius: 20px; cursor: pointer; transition: background .2s;
+    }
+    .toggle-track::after {
+      content: ''; position: absolute; top: 2px; left: 2px;
+      width: 16px; height: 16px; background: #fff; border-radius: 50%; transition: transform .2s;
+    }
+    input:checked + .toggle-track { background: #4f46e5; }
+    input:checked + .toggle-track::after { transform: translateX(16px); }
+    #status { margin-top: 8px; font-size: 11px; color: #64748b; }
+    #legend {
+      position: absolute; bottom: 30px; left: 8px; z-index: 1;
+      background: rgba(13,20,38,0.9); padding: 6px 10px; border-radius: 6px;
+      font: 11px/1.6 -apple-system, system-ui, sans-serif; color: #e2e8f0;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+    }
+    .legend-row { display: flex; align-items: center; gap: 6px; }
+    .legend-swatch { width: 14px; height: 14px; border-radius: 2px; flex-shrink: 0; }
+  </style>
+</head>
+<body>
+<div id="panel">
+  <h1>imagery-seg-unet</h1>
+  <div class="layer-row">
+    <span class="layer-label">航空写真</span>
+    <label class="toggle-switch">
+      <input type="checkbox" id="toggle-imagery" checked>
+      <span class="toggle-track"></span>
+    </label>
+  </div>
+  <div class="layer-row">
+    <span class="layer-label">建物予測 (MVT)</span>
+    <label class="toggle-switch">
+      <input type="checkbox" id="toggle-seg" checked>
+      <span class="toggle-track"></span>
+    </label>
+  </div>
+  <div id="status">読み込み中…</div>
+</div>
+<div id="legend">
+  <div class="legend-row"><div class="legend-swatch" style="background:rgba(255,80,80,0.6);border:1px solid rgba(255,80,80,0.9)"></div>建物予測</div>
+</div>
+<div id="map"></div>
+
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script>
+const SEG_API     = 'https://imagery-seg-unet.yuiseki.com';
+const IMAGERY_API = 'https://hotosm-imagery-tile.yuiseki.com';
+
+const map = new maplibregl.Map({
+  container: 'map',
+  style: 'https://tile.yuiseki.net/styles/osm-fiord/style.json',
+  center: [139.076, 35.117],
+  zoom: 15,
+  hash: true,
+});
+map.addControl(new maplibregl.NavigationControl(), 'top-right');
+
+const statusEl = document.getElementById('status');
+
+map.on('style.load', () => {
+  // 1. HOTOSM航空写真
+  map.addSource('imagery', {
+    type: 'raster',
+    tiles: [`${IMAGERY_API}/tiles/{z}/{x}/{y}.png`],
+    tileSize: 512,
+    attribution: '© HOTOSM / OpenAerialMap contributors',
+  });
+  map.addLayer({ id: 'imagery-layer', type: 'raster', source: 'imagery',
+    paint: { 'raster-opacity': 0.9 } });
+
+  // 2. 建物セグメンテーション MVT
+  map.addSource('seg-buildings', {
+    type: 'vector',
+    tiles: [`${SEG_API}/seg/buildings/{z}/{x}/{y}.mvt`],
+    minzoom: 14,
+    maxzoom: 19,
+  });
+  map.addLayer({
+    id: 'seg-buildings-fill',
+    type: 'fill',
+    source: 'seg-buildings',
+    'source-layer': 'building',
+    paint: { 'fill-color': '#ff5050', 'fill-opacity': 0.5 },
+  });
+  map.addLayer({
+    id: 'seg-buildings-outline',
+    type: 'line',
+    source: 'seg-buildings',
+    'source-layer': 'building',
+    paint: { 'line-color': '#ff2020', 'line-width': 1.2, 'line-opacity': 0.85 },
+  });
+
+  statusEl.textContent = 'Ready';
+});
+
+// Layer toggles
+document.getElementById('toggle-imagery').onchange = (e) => {
+  map.setLayoutProperty('imagery-layer', 'visibility', e.target.checked ? 'visible' : 'none');
+};
+document.getElementById('toggle-seg').onchange = (e) => {
+  const v = e.target.checked ? 'visible' : 'none';
+  map.setLayoutProperty('seg-buildings-fill', 'visibility', v);
+  map.setLayoutProperty('seg-buildings-outline', 'visibility', v);
+};
+
+// Click popup
+map.on('click', 'seg-buildings-fill', (e) => {
+  const props = e.features[0].properties;
+  const html = Object.keys(props).length
+    ? Object.entries(props).map(([k, v]) => `${k}: ${v}`).join('<br>')
+    : '(プロパティなし)';
+  new maplibregl.Popup().setLngLat(e.lngLat).setHTML(html).addTo(map);
+});
+map.on('mouseenter', 'seg-buildings-fill', () => { map.getCanvas().style.cursor = 'pointer'; });
+map.on('mouseleave', 'seg-buildings-fill', () => { map.getCanvas().style.cursor = ''; });
+</script>
+</body>
+</html>
